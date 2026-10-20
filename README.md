@@ -1,2 +1,50 @@
-# Sbbd-bags
-Nrbbd
+name: Windows Cloud RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Enable Remote Desktop (RDP)
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Write-Host "RDP Enabled successfully!"
+
+      - name: Create Local User
+        run: |
+          $username = "adminuser"
+          $password = ConvertTo-SecureString "P@ssw0rd12345!" -AsPlainText -Force
+          New-LocalUser -Name $username -Password $password -FullName "Admin User" -Description "RDP User"
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Write-Host "Local user created successfully!"
+
+      - name: Install and Connect Tailscale VPN
+        env:
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        run: |
+          $installer = "$env:TEMP\tailscale-setup.msi"
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-amd64.msi" -OutFile $installer
+          Start-Process -FilePath "msiexec.exe" -ArgumentList "/i $installer /quiet /norestart" -Wait
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=$env:TAILSCALE_AUTHKEY --accept-routes
+          Write-Host "Tailscale connected successfully!"
+
+      - name: Keep Runner Alive (6 Hours)
+        run: |
+          $seconds = 21600
+          $interval = 60
+          $elapsed = 0
+          while ($elapsed -lt $seconds) {
+              Start-Sleep -Seconds $interval
+              $elapsed += $interval
+              Write-Host "RDP is running... Elapsed time: $elapsed seconds"
+          }
+
